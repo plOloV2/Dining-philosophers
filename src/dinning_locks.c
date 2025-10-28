@@ -1,135 +1,173 @@
 #include"libs.h"
-#include"table.h"
 
 void let_them_eat_locks(uint8_t num_philosophes){
 
-    struct fork** table = malloc(num_philosophes * sizeof(struct fork*));
-    if(!table){
+    if(num_philosophes < 3){
 
-        fprintf(stderr, "ERROR: struct fork** table alloc failed");
+        fprintf(stderr, "ERROR: entered number of philosophes is to low, min is 3.\n");
         return;
 
     }
 
-    for(uint8_t i = 0; i < num_philosophes; i++){
+    omp_lock_t* table = malloc(sizeof(omp_lock_t) * (num_philosophes - 1));
+    if(!table){
 
-        table[i] = malloc(sizeof(struct fork));
-        if(!table[i]){
-
-            fprintf(stderr, "ERROR: struct fork* table[%i] alloc failed", (int)i);
-            return;
-
-        }
-
-        table[i]->user_id = 0xff;
-
-        omp_init_lock(&table[i]->fork_lock);
+        fprintf(stderr, "ERROR: omp_lock_t* table alloc failed\n");
+        return;
 
     }
 
-    #pragma omp parallel num_threads(num_philosophes) shared(table)
+    uint8_t* what_do_i_do = calloc((num_philosophes - 1), sizeof(uint8_t));
+    if(!what_do_i_do){
+
+        fprintf(stderr, "ERROR: uint8_t* what_do_i_do alloc failed\n");
+        return;
+
+    }
+
+    for(uint8_t i = 0; i < (num_philosophes - 1); i++)
+        omp_init_lock(&table[i]);
+
+    #pragma omp parallel num_threads(num_philosophes) shared(table, what_do_i_do)
     {
 
-        uint8_t id = omp_get_thread_num(), forks_owned = 0;
+        uint8_t id, forks_owned, left, right;
 
-        unsigned int seed;
-        FILE* f = fopen("/dev/urandom", "rb");
-        if(f && fread(&seed, sizeof(seed), 1, f) == 1){
+        id = omp_get_thread_num();
 
-            fclose(f);
+        if(id != num_philosophes - 1){
 
-        } else{
+            forks_owned = 0;
+            left = id;
+            right = (id + 1) % (num_philosophes - 1);
 
-            if(f)
+            unsigned int seed;
+            FILE* f = fopen("/dev/urandom", "rb");
+            if(f && fread(&seed, sizeof(seed), 1, f) == 1){
+
                 fclose(f);
-            
-            seed = (unsigned int)time(NULL);
-
-        }
-
-        while(1){
-
-            if(id % 2 == 0){
-
-                if(omp_test_lock(&table[id]->fork_lock)){
-
-                    table[id]->user_id = id;
-                    forks_owned++;
-
-                    if(omp_test_lock(&table[(id+1) % num_philosophes]->fork_lock)){
-
-                        table[(id+1) % num_philosophes]->user_id = id;
-                        forks_owned++;
-
-                    } else{
-
-                        table[id]->user_id = 0xff;
-                        forks_owned--;
-
-                        omp_unset_lock(&table[id]->fork_lock);
-
-                    }
-
-                }
-
-            }else {
-
-                if(omp_test_lock(&table[(id+1) % num_philosophes]->fork_lock)){
-
-                    table[(id+1) % num_philosophes]->user_id = id;
-                    forks_owned++;
-
-                    if(omp_test_lock(&table[id]->fork_lock)){
-
-                        table[id]->user_id = id;
-                        forks_owned++;
-
-                    } else{
-
-                        table[(id+1) % num_philosophes]->user_id = 0xff;
-                        forks_owned--;
-
-                        omp_unset_lock(&table[(id+1) % num_philosophes]->fork_lock);
-
-                    }
-
-                }
-
-            }
-
-            if(forks_owned == 2){
-
-                #pragma omp critical(print)
-                    printf("Philosopher %d now eats\n", id);
-
-                sleep(rand_r(&seed) % 5 + 1);
-
-                table[id]->user_id = 0xff;
-                omp_unset_lock(&table[id]->fork_lock);
-                table[(id+1) % num_philosophes]->user_id = 0xff;
-                omp_unset_lock(&table[(id+1) % num_philosophes]->fork_lock);
-
-                forks_owned = 0;
 
             } else{
 
-                #pragma omp critical(print)
-                    printf("Philosopher %d now things\n", id);
+                if(f)
+                    fclose(f);
+                
+                seed = (unsigned int)time(NULL);
 
             }
 
-            usleep(100000);
+            while(1){
+
+                if(id % 2 == 0){
+
+                    if(omp_test_lock(&table[left])){
+                        forks_owned++;
+
+                        if(omp_test_lock(&table[right])){
+
+                            forks_owned++;
+
+                        } else{
+
+                            forks_owned--;
+
+                            omp_unset_lock(&table[left]);
+
+                        }
+
+                    }
+
+                }else {
+
+                    if(omp_test_lock(&table[right])){
+
+                        forks_owned++;
+
+                        if(omp_test_lock(&table[left])){
+
+                            forks_owned++;
+
+                        } else{
+
+                            forks_owned--;
+
+                            omp_unset_lock(&table[right]);
+
+                        }
+
+                    }
+
+                }
+
+                if(forks_owned == 2){
+
+                    #pragma omp atomic write
+                        what_do_i_do[id] = 1;
+
+                    sleep(rand_r(&seed) % 5 + 1);
+
+                    omp_unset_lock(&table[left]);
+                    omp_unset_lock(&table[right]);
+
+                    forks_owned = 0;
+
+                    #pragma omp atomic write
+                        what_do_i_do[id] = 0;
+
+                    usleep(50000);
+
+                }
+
+                usleep(100000);
+                
+            }
+
+        } else{
+
+            uint8_t first_run = 1;
             
+            while(1) {
+
+                if(first_run){
+
+                    printf("\n=== Philosopher States ===\n");
+
+                    for(uint8_t i = 0; i < (num_philosophes - 1); i++)
+                        printf("Philosopher %d: THINKING\n", i + 1);
+
+                    printf("==========================\n");
+                    first_run = 0;
+
+                }
+                
+                printf("\033[%dA", (num_philosophes - 1) + 2);
+                printf("\r");
+                
+                printf("=== Philosopher States ===\n");
+                
+                for(uint8_t i = 0; i < (num_philosophes - 1); i++){
+
+                    uint8_t state;
+                    #pragma omp atomic read
+                    state = what_do_i_do[i];
+                    printf("Philosopher %d: %s\n", i + 1, state ? "EATING" : "THINKING");
+
+                }
+                
+                printf("==========================\n");
+                
+                usleep(100000);
+
+            }
+
         }
 
     }
 
-    for(uint8_t i = 0; i < num_philosophes; i++){
-        
-        omp_destroy_lock(&table[i]->fork_lock);
-        free(table[i]);
+    for(uint8_t i = 0; i < (num_philosophes - 1); i++)
+        omp_destroy_lock(&table[i]);
 
-    }
     free(table);
+    free(what_do_i_do);
 
 }

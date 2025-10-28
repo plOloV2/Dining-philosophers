@@ -4,26 +4,16 @@
 int main(int argc, char** argv){
 
     switch(argc){
-        case 3:
-            switch(atoi(argv[2])){
-                case 0:
-                    let_them_eat_locks((uint8_t)(atoi(argv[1]) % omp_get_max_threads()));
-                    break;
-
-                case 1:
-                    let_them_eat_FIFO((uint8_t)(atoi(argv[1]) % omp_get_max_threads()));
-                    break;
-
-            }
-
+        case 2:
+            let_them_eat_locks((uint8_t)(atoi(argv[1]) % omp_get_max_threads()));
             return 0;
 
         default:
-            fprintf(stderr, "ERROR: Wrong number of arguments");
+            fprintf(stderr, "ERROR: Wrong number of arguments\n");
             return 1;
     }
     
-    fprintf(stderr, "ERROR: How did we get here?");
+    fprintf(stderr, "ERROR: How did we get here?\n");
     return 0x45;
 
 }

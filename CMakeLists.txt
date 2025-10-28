@@ -12,10 +12,12 @@ set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -Ofast -march=native -flto -
 find_package(OpenMP REQUIRED)
 
 add_executable(${PROJECT_NAME}
-    src/FIFO.c
-    src/dinning_FIFO.c
     src/dinning_locks.c
     src/main.c
+)
+
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE include)
