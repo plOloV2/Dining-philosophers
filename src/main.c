@@ -5,7 +5,7 @@ int main(int argc, char** argv){
 
     switch(argc){
         case 2:
-            let_them_eat_locks((uint8_t)(atoi(argv[1]) % omp_get_max_threads()));
+            let_them_eat_locks((uint8_t)(atoi(argv[1]) % (omp_get_max_threads() + 1)));
             return 0;
 
         default:
