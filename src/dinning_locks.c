@@ -33,13 +33,21 @@ void let_them_eat_locks(uint8_t num_philosophes){
 
     }
 
+    uint8_t* can_eat = calloc((num_philosophes - 1), sizeof(uint8_t));
+    if(!can_eat){
+
+        fprintf(stderr, "ERROR: uint8_t* can_eat alloc failed\n");
+        return;
+
+    }
+
     for(uint8_t i = 0; i < (num_philosophes - 1); i++)
         omp_init_lock(&table[i]);
 
     #pragma omp parallel num_threads(num_philosophes) shared(table, what_do_i_do, times_eaten)
     {
 
-        uint8_t id, forks_owned, left, right, left_eat_id, right_eat_id;
+        uint8_t id, forks_owned, left, right;
 
         id = omp_get_thread_num();
 
@@ -48,8 +56,6 @@ void let_them_eat_locks(uint8_t num_philosophes){
             forks_owned = 0;
             left = id;
             right = (id + 1) % (num_philosophes - 1);
-            left_eat_id = (id == 0) ? (num_philosophes - 2) : (id - 1);
-            right_eat_id = (id == (num_philosophes - 2)) ? 0 : (id + 1);
 
             unsigned int seed;
             FILE* f = fopen("/dev/urandom", "rb");
@@ -68,15 +74,12 @@ void let_them_eat_locks(uint8_t num_philosophes){
 
             while(1){
 
-                uint64_t I_eat, left_eat, right_eat;
-                #pragma omp atomic read
-                    I_eat = times_eaten[id];
-                #pragma omp atomic read
-                    left_eat = times_eaten[left_eat_id];
-                #pragma omp atomic read
-                    right_eat = times_eaten[right_eat_id];
+                uint8_t can_I_eat;
 
-                if(I_eat <= left_eat && I_eat <= right_eat){
+                #pragma omp atomic read
+                    can_I_eat = can_eat[id];
+
+                if(can_I_eat){
 
                     if(id % 2 == 0){
 
@@ -151,6 +154,32 @@ void let_them_eat_locks(uint8_t num_philosophes){
             
             while(1){
 
+                for(uint8_t i = 0; i < num_philosophes - 1; i++){
+
+                    uint8_t left_eat_id, right_eat_id;
+
+                    left_eat_id = (i == 0) ? (num_philosophes - 2) : (i - 1);
+                    right_eat_id = (i == (num_philosophes - 2)) ? 0 : (i + 1);
+
+                    uint8_t allow;
+                    uint64_t left, mid, right;
+
+                    #pragma omp atomic read
+                        left = times_eaten[left_eat_id];
+
+                    #pragma omp atomic read
+                        mid = times_eaten[i];
+
+                    #pragma omp atomic read
+                        right = times_eaten[right_eat_id];
+
+                    allow = ((mid <= left) && (mid <= right));
+
+                    #pragma omp atomic write
+                        can_eat[i] = allow;
+
+                }
+
                 if(first_run){
 
                     printf("\n=========== Philosopher States ===========\n");
@@ -184,7 +213,7 @@ void let_them_eat_locks(uint8_t num_philosophes){
                 
                 printf("==========================================\n");
                 
-                usleep(100000);
+                usleep(25000);
 
             }
 
